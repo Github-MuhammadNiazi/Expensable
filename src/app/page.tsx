@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { Card, CardTitle, Button, EmptyState, Avatar } from '@/components';
+import { Card, CardTitle, Button, EmptyState, Avatar, BalanceSummaryModal } from '@/components';
 import {
   TrendingUp,
   TrendingDown,
@@ -13,13 +13,15 @@ import {
   Plus,
   Wallet,
   Receipt,
-  Pencil
+  Pencil,
+  Eye
 } from 'lucide-react';
 import Link from 'next/link';
 import AddTransactionModal from '@/components/AddTransactionModal';
 import SettleUpModal from '@/components/SettleUpModal';
 import { formatCurrency as formatCurrencyUtil } from '@/lib/currencies';
 import { Transaction } from '@/types';
+import { BalanceSummary, generateBalancePDF, isMobileDevice } from '@/lib/balanceSummary';
 
 export default function Dashboard() {
   const {
@@ -42,6 +44,8 @@ export default function Dashboard() {
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
   const [settleGroupId, setSettleGroupId] = useState<string | null>(null);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
+  const [showBalanceSummary, setShowBalanceSummary] = useState(false);
+  const [balanceSummary, setBalanceSummary] = useState<BalanceSummary | null>(null);
 
   useEffect(() => {
     initialize();
@@ -77,6 +81,93 @@ export default function Dashboard() {
     setSettleGroupId(groupId);
     setSettleUserId(null);
     setShowSettleUp(true);
+  };
+
+  const handleViewGroupSummary = (groupId: string) => {
+    const groupBalance = getGroupBalance(groupId);
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    // Calculate who owes whom within the group
+    const details = groupBalance.balances
+      .filter(b => b.amount < 0)
+      .map(debtor => {
+        // Find creditors (those with positive balance)
+        const creditors = groupBalance.balances.filter(b => b.amount > 0);
+        return creditors.map(creditor => ({
+          fromUser: debtor.userName,
+          toUser: creditor.userName,
+          amount: Math.min(Math.abs(debtor.amount), creditor.amount),
+        }));
+      })
+      .flat()
+      .filter(d => d.amount > 0);
+
+    const summary: BalanceSummary = {
+      title: `${group.name} - Balance Summary`,
+      date: new Date().toLocaleDateString(),
+      currency: defaultCurrency,
+      totalOwed: groupBalance.totalOwed,
+      totalOwing: groupBalance.totalOwing,
+      netBalance: groupBalance.totalOwed - groupBalance.totalOwing,
+      details,
+    };
+
+    if (isMobileDevice()) {
+      setBalanceSummary(summary);
+      setShowBalanceSummary(true);
+    } else {
+      generateBalancePDF(summary);
+    }
+  };
+
+  const handleViewUserSummary = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    const userBalance = balances.find(b => b.userId === userId);
+    if (!userBalance) return;
+
+    // Calculate detailed balance with this user
+    const details: { fromUser: string; toUser: string; amount: number }[] = [];
+
+    // Get admin user name (first user is typically admin)
+    const adminName = users[0]?.name || 'You';
+
+    if (userBalance.totalOwing > 0) {
+      // Admin owes this user
+      details.push({
+        fromUser: adminName,
+        toUser: user.name,
+        amount: userBalance.totalOwing,
+      });
+    }
+
+    if (userBalance.totalOwed > 0) {
+      // This user owes admin
+      details.push({
+        fromUser: user.name,
+        toUser: adminName,
+        amount: userBalance.totalOwed,
+      });
+    }
+
+    const summary: BalanceSummary = {
+      title: `${user.name} - Balance Summary`,
+      date: new Date().toLocaleDateString(),
+      currency: defaultCurrency,
+      totalOwed: userBalance.totalOwed,
+      totalOwing: userBalance.totalOwing,
+      netBalance: userBalance.netBalance,
+      details,
+    };
+
+    if (isMobileDevice()) {
+      setBalanceSummary(summary);
+      setShowBalanceSummary(true);
+    } else {
+      generateBalancePDF(summary);
+    }
   };
 
   const hasData = users.length > 0;
@@ -203,7 +294,7 @@ export default function Dashboard() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <div className="text-right">
                           {group.balance.totalOwed > 0 && (
                             <p className="text-sm text-[var(--success)]">
@@ -216,6 +307,14 @@ export default function Dashboard() {
                             </p>
                           )}
                         </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleViewGroupSummary(group.id)}
+                          title="View balance summary"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -262,10 +361,18 @@ export default function Dashboard() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <p className={'font-medium ' + (balance.netBalance >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>
                             {(balance.netBalance >= 0 ? '+' : '') + formatCurrency(balance.netBalance)}
                           </p>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleViewUserSummary(user.id)}
+                            title="View balance summary"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -351,6 +458,14 @@ export default function Dashboard() {
         }}
         userId={settleUserId}
         groupId={settleGroupId}
+      />
+      <BalanceSummaryModal
+        isOpen={showBalanceSummary}
+        onClose={() => {
+          setShowBalanceSummary(false);
+          setBalanceSummary(null);
+        }}
+        summary={balanceSummary}
       />
     </div>
   );
