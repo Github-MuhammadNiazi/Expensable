@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { Card, CardTitle, Button, EmptyState, Avatar } from '@/components';
 import {
   TrendingUp,
@@ -16,10 +17,7 @@ import {
 import Link from 'next/link';
 import AddTransactionModal from '@/components/AddTransactionModal';
 import SettleUpModal from '@/components/SettleUpModal';
-
-function formatCurrency(amount: number): string {
-  return '$' + amount.toFixed(2);
-}
+import { formatCurrency as formatCurrencyUtil } from '@/lib/currencies';
 
 export default function Dashboard() {
   const {
@@ -32,6 +30,10 @@ export default function Dashboard() {
     getAllBalances,
     getGroupBalance,
   } = useStore();
+
+  const { defaultCurrency } = useSettingsStore();
+
+  const formatCurrency = (amount: number) => formatCurrencyUtil(amount, defaultCurrency);
 
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showSettleUp, setShowSettleUp] = useState(false);

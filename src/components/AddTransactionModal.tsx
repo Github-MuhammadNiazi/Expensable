@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import { Avatar } from '@/components';
 import { SplitType, SplitDetail } from '@/types';
-import { DollarSign, Percent, Hash, Equal } from 'lucide-react';
+import { Percent, Hash, Equal } from 'lucide-react';
+import { getCurrency, formatCurrency } from '@/lib/currencies';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -15,15 +17,17 @@ interface AddTransactionModalProps {
   groupId?: string;
 }
 
-const splitTypeOptions: { value: SplitType; label: string; icon: React.ReactNode; description: string }[] = [
-  { value: 'equal', label: 'Equal', icon: <Equal className="h-4 w-4" />, description: 'Split equally among all' },
-  { value: 'exact', label: 'Exact', icon: <DollarSign className="h-4 w-4" />, description: 'Enter exact amounts' },
-  { value: 'percentage', label: 'Percentage', icon: <Percent className="h-4 w-4" />, description: 'Split by percentage' },
-  { value: 'shares', label: 'Shares', icon: <Hash className="h-4 w-4" />, description: 'Split by share ratio' },
-];
-
 export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTransactionModalProps) {
   const { users, groups, addTransaction, getGroupMembers } = useStore();
+  const { defaultCurrency } = useSettingsStore();
+  const currency = getCurrency(defaultCurrency);
+
+  const splitTypeOptions: { value: SplitType; label: string; icon: React.ReactNode; description: string }[] = [
+    { value: 'equal', label: 'Equal', icon: <Equal className="h-4 w-4" />, description: 'Split equally among all' },
+    { value: 'exact', label: 'Exact', icon: <span className="text-sm font-medium">{currency.symbol}</span>, description: 'Enter exact amounts' },
+    { value: 'percentage', label: 'Percentage', icon: <Percent className="h-4 w-4" />, description: 'Split by percentage' },
+    { value: 'shares', label: 'Shares', icon: <Hash className="h-4 w-4" />, description: 'Split by share ratio' },
+  ];
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -176,7 +180,7 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
             placeholder="0.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            leftIcon={<DollarSign className="h-4 w-4" />}
+            leftIcon={<span className="text-sm font-medium">{currency.symbol}</span>}
             error={errors.amount}
           />
           <Input
@@ -330,7 +334,7 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
 
                   {isSelected && splitType === 'equal' && amountNum > 0 && (
                     <span className="text-sm font-medium text-[var(--foreground)]">
-                      ${perPersonAmount.toFixed(2)}
+                      {formatCurrency(perPersonAmount, defaultCurrency)}
                     </span>
                   )}
                 </div>

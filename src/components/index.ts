@@ -11,3 +11,4 @@ export { default as AuthGuard } from './AuthGuard';
 export { default as LoginPage } from './LoginPage';
 export { default as AppShell } from './AppShell';
 export { default as SyncStatus } from './SyncStatus';
+export { Tabs, TabList, Tab, TabPanel } from './Tabs';

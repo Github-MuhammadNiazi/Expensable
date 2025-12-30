@@ -7,6 +7,10 @@ export interface User {
   updated_at: string;
 }
 
+export interface AppSettings {
+  defaultCurrency: string;
+}
+
 export interface Group {
   id: string;
   name: string;

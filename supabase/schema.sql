@@ -69,6 +69,15 @@ CREATE TABLE IF NOT EXISTS settlements (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- App settings table (for storing user preferences like default currency)
+CREATE TABLE IF NOT EXISTS app_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  key TEXT NOT NULL UNIQUE,
+  value TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Sync queue for offline operations
 CREATE TABLE IF NOT EXISTS sync_queue (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -101,6 +110,7 @@ ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_splits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settlements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
 -- Policy to allow all operations with the anon key (since we handle auth separately)
 CREATE POLICY "Allow all operations on users" ON users FOR ALL USING (true) WITH CHECK (true);
@@ -109,6 +119,7 @@ CREATE POLICY "Allow all operations on group_members" ON group_members FOR ALL U
 CREATE POLICY "Allow all operations on transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on transaction_splits" ON transaction_splits FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations on settlements" ON settlements FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations on app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

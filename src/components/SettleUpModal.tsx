@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import { Avatar } from '@/components';
-import { DollarSign, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import { getCurrency } from '@/lib/currencies';
 
 interface SettleUpModalProps {
   isOpen: boolean;
@@ -17,6 +19,8 @@ interface SettleUpModalProps {
 
 export default function SettleUpModal({ isOpen, onClose, userId, groupId }: SettleUpModalProps) {
   const { users, groups, settleUp, getUserBalance, getGroupBalance } = useStore();
+  const { defaultCurrency } = useSettingsStore();
+  const currency = getCurrency(defaultCurrency);
 
   const [fromUserId, setFromUserId] = useState('');
   const [toUserId, setToUserId] = useState('');
@@ -189,7 +193,7 @@ export default function SettleUpModal({ isOpen, onClose, userId, groupId }: Sett
           placeholder="0.00"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          leftIcon={<DollarSign className="h-4 w-4" />}
+          leftIcon={<span className="text-sm font-medium">{currency.symbol}</span>}
           error={errors.amount}
         />
 
