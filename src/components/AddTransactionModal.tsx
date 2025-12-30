@@ -7,7 +7,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import { Avatar } from '@/components';
-import { SplitType, SplitDetail } from '@/types';
+import { SplitType, SplitDetail, Transaction } from '@/types';
 import { Percent, Hash, Equal } from 'lucide-react';
 import { getCurrency, formatCurrency } from '@/lib/currencies';
 
@@ -15,12 +15,15 @@ interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   groupId?: string;
+  editTransaction?: Transaction | null;
 }
 
-export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTransactionModalProps) {
-  const { users, groups, addTransaction, getGroupMembers } = useStore();
+export default function AddTransactionModal({ isOpen, onClose, groupId, editTransaction }: AddTransactionModalProps) {
+  const { users, groups, addTransaction, updateTransaction, getGroupMembers, getTransactionSplits } = useStore();
   const { defaultCurrency } = useSettingsStore();
   const currency = getCurrency(defaultCurrency);
+
+  const isEditMode = !!editTransaction;
 
   const splitTypeOptions: { value: SplitType; label: string; icon: React.ReactNode; description: string }[] = [
     { value: 'equal', label: 'Equal', icon: <Equal className="h-4 w-4" />, description: 'Split equally among all' },
@@ -42,46 +45,82 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
 
   const availableUsers = selectedGroupId ? getGroupMembers(selectedGroupId) : users;
 
+  // Initialize form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setDescription('');
-      setAmount('');
-      setPaidBy(users[0]?.id || '');
-      setSelectedGroupId(groupId || '');
-      setSplitType('equal');
-      setParticipants(availableUsers.map(u => u.id));
-      setSplits([]);
-      setDate(new Date().toISOString().split('T')[0]);
+      if (editTransaction) {
+        // Edit mode - populate with existing transaction data
+        setDescription(editTransaction.description);
+        setAmount(editTransaction.amount.toString());
+        setPaidBy(editTransaction.paid_by);
+        setSelectedGroupId(editTransaction.group_id || '');
+        setSplitType(editTransaction.split_type);
+        setDate(editTransaction.date.split('T')[0]);
+
+        // Get existing splits
+        const existingSplits = getTransactionSplits(editTransaction.id);
+        const participantIds = existingSplits.map(s => s.user_id);
+        setParticipants(participantIds);
+
+        // Set splits with existing values
+        const splitDetails: SplitDetail[] = existingSplits.map(s => ({
+          userId: s.user_id,
+          amount: s.amount,
+          percentage: s.percentage,
+          shares: s.shares,
+        }));
+        setSplits(splitDetails);
+      } else {
+        // Add mode - reset form
+        setDescription('');
+        setAmount('');
+        setPaidBy(users[0]?.id || '');
+        setSelectedGroupId(groupId || '');
+        setSplitType('equal');
+        setParticipants(availableUsers.map(u => u.id));
+        setSplits([]);
+        setDate(new Date().toISOString().split('T')[0]);
+      }
       setErrors({});
     }
-  }, [isOpen, groupId, users]);
+  }, [isOpen, editTransaction, groupId, users]);
 
+  // Update participants when group changes (only in add mode)
   useEffect(() => {
-    if (selectedGroupId) {
-      const members = getGroupMembers(selectedGroupId);
-      setParticipants(members.map(u => u.id));
-      if (members.length > 0 && !members.find(m => m.id === paidBy)) {
-        setPaidBy(members[0].id);
+    if (!isEditMode) {
+      if (selectedGroupId) {
+        const members = getGroupMembers(selectedGroupId);
+        setParticipants(members.map(u => u.id));
+        if (members.length > 0 && !members.find(m => m.id === paidBy)) {
+          setPaidBy(members[0].id);
+        }
+      } else {
+        setParticipants(users.map(u => u.id));
       }
-    } else {
-      setParticipants(users.map(u => u.id));
     }
-  }, [selectedGroupId]);
+  }, [selectedGroupId, isEditMode]);
 
+  // Update splits when participants or split type changes (only when not initially loading edit data)
   useEffect(() => {
-    const newSplits = participants.map(userId => ({
-      userId,
-      amount: splitType === 'exact' ? 0 : undefined,
-      percentage: splitType === 'percentage' ? 100 / participants.length : undefined,
-      shares: splitType === 'shares' ? 1 : undefined,
-    }));
-    setSplits(newSplits);
+    if (!isEditMode || splits.length === 0) {
+      const newSplits = participants.map(userId => {
+        const existingSplit = splits.find(s => s.userId === userId);
+        return {
+          userId,
+          amount: splitType === 'exact' ? (existingSplit?.amount || 0) : undefined,
+          percentage: splitType === 'percentage' ? (existingSplit?.percentage || 100 / participants.length) : undefined,
+          shares: splitType === 'shares' ? (existingSplit?.shares || 1) : undefined,
+        };
+      });
+      setSplits(newSplits);
+    }
   }, [participants, splitType]);
 
   const toggleParticipant = (userId: string) => {
     if (participants.includes(userId)) {
       if (participants.length > 1) {
         setParticipants(participants.filter(id => id !== userId));
+        setSplits(splits.filter(s => s.userId !== userId));
       }
     } else {
       setParticipants([...participants, userId]);
@@ -139,7 +178,7 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
 
     setIsSubmitting(true);
     try {
-      await addTransaction({
+      const transactionData = {
         description: description.trim(),
         amount: parseFloat(amount),
         paidBy,
@@ -148,10 +187,16 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
         participants,
         splits,
         date,
-      });
+      };
+
+      if (isEditMode && editTransaction) {
+        await updateTransaction(editTransaction.id, transactionData);
+      } else {
+        await addTransaction(transactionData);
+      }
       onClose();
     } catch (error) {
-      console.error('Failed to add transaction:', error);
+      console.error('Failed to save transaction:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -161,7 +206,7 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
   const perPersonAmount = participants.length > 0 ? amountNum / participants.length : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Expense" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={isEditMode ? "Edit Expense" : "Add Expense"} size="lg">
       <form onSubmit={handleSubmit} className="space-y-6">
         <Input
           label="Description"
@@ -348,7 +393,7 @@ export default function AddTransactionModal({ isOpen, onClose, groupId }: AddTra
             Cancel
           </Button>
           <Button type="submit" isLoading={isSubmitting} className="flex-1">
-            Add Expense
+            {isEditMode ? 'Save Changes' : 'Add Expense'}
           </Button>
         </div>
       </form>

@@ -59,6 +59,7 @@ interface AppState {
 
   // Transaction actions
   addTransaction: (data: TransactionFormData) => Promise<Transaction>;
+  updateTransaction: (id: string, data: TransactionFormData) => Promise<Transaction>;
   deleteTransaction: (id: string) => Promise<void>;
   getTransaction: (id: string) => Transaction | undefined;
   getTransactionSplits: (transactionId: string) => TransactionSplit[];
@@ -439,6 +440,93 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Sync to cloud
     await sync.syncTransactionImmediate('INSERT', transaction);
+    for (const split of splits) {
+      await sync.syncTransactionSplitImmediate('INSERT', split);
+    }
+
+    return transaction;
+  },
+
+  updateTransaction: async (id: string, data: TransactionFormData) => {
+    const existingTransaction = get().transactions.find((t) => t.id === id);
+    if (!existingTransaction) {
+      throw new Error('Transaction not found');
+    }
+
+    const now = new Date().toISOString();
+    const transaction: Transaction = {
+      ...existingTransaction,
+      description: data.description,
+      amount: data.amount,
+      paid_by: data.paidBy,
+      group_id: data.groupId,
+      split_type: data.splitType,
+      date: data.date,
+      updated_at: now,
+    };
+
+    await db.dbAddTransaction(transaction);
+
+    // Delete existing splits
+    const existingSplits = get().transactionSplits.filter((s) => s.transaction_id === id);
+    for (const split of existingSplits) {
+      await db.dbDeleteTransactionSplit(split.id);
+      await sync.syncTransactionSplitImmediate('DELETE', split);
+    }
+
+    // Calculate new splits based on split type
+    const splits: TransactionSplit[] = [];
+    const participantCount = data.participants.length;
+
+    for (let i = 0; i < data.participants.length; i++) {
+      const userId = data.participants[i];
+      let amount = 0;
+      let percentage: number | undefined;
+      let shares: number | undefined;
+
+      switch (data.splitType) {
+        case 'equal':
+          amount = data.amount / participantCount;
+          break;
+        case 'exact':
+          amount = data.splits[i]?.amount || 0;
+          break;
+        case 'percentage':
+          percentage = data.splits[i]?.percentage || 0;
+          amount = (data.amount * percentage) / 100;
+          break;
+        case 'shares':
+          const totalShares = data.splits.reduce((sum, s) => sum + (s.shares || 0), 0);
+          shares = data.splits[i]?.shares || 0;
+          amount = totalShares > 0 ? (data.amount * shares) / totalShares : 0;
+          break;
+      }
+
+      const split: TransactionSplit = {
+        id: uuidv4(),
+        transaction_id: transaction.id,
+        user_id: userId,
+        amount: Math.round(amount * 100) / 100,
+        percentage,
+        shares,
+        is_settled: userId === data.paidBy,
+        settled_at: userId === data.paidBy ? now : undefined,
+      };
+
+      await db.dbAddTransactionSplit(split);
+      splits.push(split);
+    }
+
+    set((state) => ({
+      transactions: state.transactions.map((t) => (t.id === id ? transaction : t)),
+      transactionSplits: [
+        ...state.transactionSplits.filter((s) => s.transaction_id !== id),
+        ...splits,
+      ],
+    }));
+
+    // Sync to cloud
+    await sync.syncTransactionImmediate('UPDATE', transaction);
     for (const split of splits) {
       await sync.syncTransactionSplitImmediate('INSERT', split);
     }

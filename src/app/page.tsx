@@ -12,12 +12,14 @@ import {
   UsersRound,
   Plus,
   Wallet,
-  Receipt
+  Receipt,
+  Pencil
 } from 'lucide-react';
 import Link from 'next/link';
 import AddTransactionModal from '@/components/AddTransactionModal';
 import SettleUpModal from '@/components/SettleUpModal';
 import { formatCurrency as formatCurrencyUtil } from '@/lib/currencies';
+import { Transaction } from '@/types';
 
 export default function Dashboard() {
   const {
@@ -39,6 +41,7 @@ export default function Dashboard() {
   const [showSettleUp, setShowSettleUp] = useState(false);
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
   const [settleGroupId, setSettleGroupId] = useState<string | null>(null);
+  const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
     initialize();
@@ -304,11 +307,23 @@ export default function Dashboard() {
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-[var(--foreground)]">{formatCurrency(tx.amount)}</p>
-                        <p className="text-xs text-[var(--muted)]">
-                          {new Date(tx.date).toLocaleDateString()}
-                        </p>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="font-semibold text-[var(--foreground)]">{formatCurrency(tx.amount)}</p>
+                          <p className="text-xs text-[var(--muted)]">
+                            {new Date(tx.date).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditTransaction(tx);
+                            setShowAddTransaction(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   );
@@ -321,7 +336,11 @@ export default function Dashboard() {
 
       <AddTransactionModal
         isOpen={showAddTransaction}
-        onClose={() => setShowAddTransaction(false)}
+        onClose={() => {
+          setShowAddTransaction(false);
+          setEditTransaction(null);
+        }}
+        editTransaction={editTransaction}
       />
       <SettleUpModal
         isOpen={showSettleUp}
