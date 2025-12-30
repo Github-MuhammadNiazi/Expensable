@@ -9,6 +9,7 @@ export interface User {
 
 export interface AppSettings {
   defaultCurrency: string;
+  adminUserId: string | null;
 }
 
 export interface Group {

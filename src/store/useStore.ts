@@ -16,6 +16,11 @@ import {
 import * as db from '@/lib/db';
 import * as sync from '@/lib/sync';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { useSettingsStore } from './useSettingsStore';
+
+const getAdminUserName = (): string => {
+  return process.env.NEXT_PUBLIC_ADMIN_USER_NAME || 'You';
+};
 
 interface AppState {
   users: User[];
@@ -101,13 +106,48 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // Then load from local IndexedDB
-      const [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
+      let [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
         db.dbGetAllUsers(),
         db.dbGetAllGroups(),
         db.dbGetAllTransactions(),
         db.dbGetAllTransactionSplits(),
         db.dbGetAllSettlements(),
       ]);
+
+      // Find or create admin user
+      // Look for existing admin user by name (more reliable than settings store which may not be hydrated yet)
+      const adminUserName = getAdminUserName();
+      let adminUser = users.find((u) => u.name === adminUserName);
+
+      if (!adminUser) {
+        // Create new admin user
+        const now = new Date().toISOString();
+        adminUser = {
+          id: uuidv4(),
+          name: adminUserName,
+          created_at: now,
+          updated_at: now,
+        };
+
+        await db.dbAddUser(adminUser);
+        await sync.syncUserImmediate('INSERT', adminUser);
+
+        // Add to users array
+        users = [adminUser, ...users];
+      } else {
+        // Ensure admin user is first in the list
+        const adminIndex = users.findIndex((u) => u.id === adminUser!.id);
+        if (adminIndex > 0) {
+          const [existingAdmin] = users.splice(adminIndex, 1);
+          users.unshift(existingAdmin);
+        }
+      }
+
+      // Update settings store with admin user ID
+      const settingsStore = useSettingsStore.getState();
+      if (settingsStore.adminUserId !== adminUser.id) {
+        settingsStore.setAdminUserId(adminUser.id);
+      }
 
       // Load group members
       const allGroupMembers: GroupMember[] = [];
@@ -141,13 +181,24 @@ export const useStore = create<AppState>((set, get) => ({
       await sync.syncAll();
 
       // Reload data from local DB after sync
-      const [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
+      let [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
         db.dbGetAllUsers(),
         db.dbGetAllGroups(),
         db.dbGetAllTransactions(),
         db.dbGetAllTransactionSplits(),
         db.dbGetAllSettlements(),
       ]);
+
+      // Ensure admin user is first in the list
+      const settingsStore = useSettingsStore.getState();
+      const adminUserId = settingsStore.adminUserId;
+      if (adminUserId) {
+        const adminIndex = users.findIndex((u) => u.id === adminUserId);
+        if (adminIndex > 0) {
+          const [adminUser] = users.splice(adminIndex, 1);
+          users.unshift(adminUser);
+        }
+      }
 
       const allGroupMembers: GroupMember[] = [];
       for (const group of groups) {
@@ -217,6 +268,12 @@ export const useStore = create<AppState>((set, get) => ({
   deleteUser: async (id: string) => {
     const user = get().users.find((u) => u.id === id);
     if (!user) return;
+
+    // Prevent deleting admin user (check by name)
+    if (user.name === getAdminUserName()) {
+      console.warn('Cannot delete admin user');
+      return;
+    }
 
     await db.dbDeleteUser(id);
     set((state) => ({ users: state.users.filter((u) => u.id !== id) }));

@@ -7,15 +7,21 @@ import { AppSettings } from '@/types';
 
 interface SettingsState extends AppSettings {
   setDefaultCurrency: (currencyCode: string) => void;
+  setAdminUserId: (userId: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       defaultCurrency: DEFAULT_CURRENCY_CODE,
+      adminUserId: null,
 
       setDefaultCurrency: (currencyCode: string) => {
         set({ defaultCurrency: currencyCode });
+      },
+
+      setAdminUserId: (userId: string) => {
+        set({ adminUserId: userId });
       },
     }),
     {
