@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { Card, CardTitle, Button, Input, Tabs, TabList, Tab, TabPanel } from '@/components';
+import { Card, CardTitle, Button, Input, Tabs, TabList, Tab, TabPanel, SearchableSelect } from '@/components';
 import { Lock, Shield, Database, Check, Settings, Coins } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { CURRENCIES, getCurrency } from '@/lib/currencies';
@@ -63,6 +63,16 @@ export default function SettingsPage() {
 
   const currentCurrency = getCurrency(defaultCurrency);
 
+  // Convert currencies to SearchableSelect options
+  const currencyOptions = useMemo(() =>
+    CURRENCIES.map((currency) => ({
+      value: currency.code,
+      label: `${currency.symbol} - ${currency.name} (${currency.code})`,
+      searchTerms: `${currency.code} ${currency.name} ${currency.symbol}`,
+    })),
+    []
+  );
+
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
@@ -97,27 +107,13 @@ export default function SettingsPage() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-2">
-                    Default Currency
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={defaultCurrency}
-                      onChange={(e) => handleCurrencyChange(e.target.value)}
-                      className="w-full px-4 py-3 pr-10 rounded-lg border border-[var(--card-border)] bg-[var(--card)] text-[var(--foreground)] appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition-all"
-                    >
-                      {CURRENCIES.map((currency) => (
-                        <option key={currency.code} value={currency.code}>
-                          {currency.symbol} - {currency.name} ({currency.code})
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <svg className="h-5 w-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
+                  <SearchableSelect
+                    label="Default Currency"
+                    options={currencyOptions}
+                    value={defaultCurrency}
+                    onChange={handleCurrencyChange}
+                    placeholder="Select a currency..."
+                  />
                   <p className="mt-2 text-sm text-[var(--muted)]">
                     Currently: {currentCurrency.symbol} ({currentCurrency.name})
                   </p>

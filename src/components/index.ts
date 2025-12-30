@@ -12,3 +12,4 @@ export { default as LoginPage } from './LoginPage';
 export { default as AppShell } from './AppShell';
 export { default as SyncStatus } from './SyncStatus';
 export { Tabs, TabList, Tab, TabPanel } from './Tabs';
+export { default as SearchableSelect } from './SearchableSelect';
