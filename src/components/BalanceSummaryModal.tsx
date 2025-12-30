@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
 import Modal from './Modal';
-import { BalanceSummary, BalanceDetail } from '@/lib/balanceSummary';
+import { BalanceSummary } from '@/lib/balanceSummary';
 import { formatCurrency } from '@/lib/currencies';
 import { ArrowRight, TrendingUp, TrendingDown, Scale } from 'lucide-react';
 
