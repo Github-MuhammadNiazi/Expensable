@@ -15,3 +15,10 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## ENV Configurations
+# Supabase Configuration (Optional - app works offline without these)
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Admin Password (Required)
+NEXT_PUBLIC_ADMIN_PASSWORD=your_secure_password_here

@@ -1,9 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
+import AppShell from "@/components/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,6 +17,10 @@ export const metadata: Metadata = {
   title: "Expensable - Money Tracking & Management",
   description: "A premium money management tool for tracking expenses, splitting bills, and managing debts. Self-hosted and works offline.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/icons/icon-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -43,12 +45,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={bodyClassName}>
-        <ServiceWorkerRegistration />
-        <Header />
-        <main className="flex-1">
-          {children}
-        </main>
-        <Footer />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

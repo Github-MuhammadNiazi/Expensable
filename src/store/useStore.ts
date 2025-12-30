@@ -9,12 +9,13 @@ import {
   Transaction,
   TransactionSplit,
   Settlement,
-  SplitType,
   UserBalance,
   GroupBalance,
   TransactionFormData,
 } from '@/types';
 import * as db from '@/lib/db';
+import * as sync from '@/lib/sync';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 interface AppState {
   users: User[];
@@ -25,9 +26,16 @@ interface AppState {
   settlements: Settlement[];
   isLoading: boolean;
   isInitialized: boolean;
+  isSyncing: boolean;
+  isOnline: boolean;
+  lastSyncTime: string | null;
 
   // Initialization
   initialize: () => Promise<void>;
+
+  // Sync actions
+  syncNow: () => Promise<void>;
+  setOnlineStatus: (online: boolean) => void;
 
   // User actions
   addUser: (name: string, email?: string) => Promise<User>;
@@ -70,30 +78,38 @@ export const useStore = create<AppState>((set, get) => ({
   settlements: [],
   isLoading: false,
   isInitialized: false,
+  isSyncing: false,
+  isOnline: typeof window !== 'undefined' ? navigator.onLine : true,
+  lastSyncTime: null,
 
   initialize: async () => {
     if (get().isInitialized) return;
 
     set({ isLoading: true });
     try {
-      const [users, groups, groupMembers, transactions, transactionSplits, settlements] = await Promise.all([
+      // First, try to sync from cloud if configured and online
+      if (isSupabaseConfigured() && sync.isOnline()) {
+        try {
+          set({ isSyncing: true });
+          await sync.pullFromCloud();
+          set({ lastSyncTime: new Date().toISOString() });
+        } catch (error) {
+          console.error('Failed to sync from cloud:', error);
+        } finally {
+          set({ isSyncing: false });
+        }
+      }
+
+      // Then load from local IndexedDB
+      const [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
         db.dbGetAllUsers(),
         db.dbGetAllGroups(),
-        db.dbGetAllTransactionSplits().then(async () => {
-          const allGroups = await db.dbGetAllGroups();
-          const members: GroupMember[] = [];
-          for (const group of allGroups) {
-            const gm = await db.dbGetGroupMembers(group.id);
-            members.push(...gm);
-          }
-          return members;
-        }),
         db.dbGetAllTransactions(),
         db.dbGetAllTransactionSplits(),
         db.dbGetAllSettlements(),
       ]);
 
-      // Flatten groupMembers properly
+      // Load group members
       const allGroupMembers: GroupMember[] = [];
       for (const group of groups) {
         const members = await db.dbGetGroupMembers(group.id);
@@ -109,10 +125,57 @@ export const useStore = create<AppState>((set, get) => ({
         settlements,
         isLoading: false,
         isInitialized: true,
+        isOnline: sync.isOnline(),
       });
     } catch (error) {
       console.error('Failed to initialize store:', error);
       set({ isLoading: false, isInitialized: true });
+    }
+  },
+
+  syncNow: async () => {
+    if (!isSupabaseConfigured() || !sync.isOnline()) return;
+
+    set({ isSyncing: true });
+    try {
+      await sync.syncAll();
+
+      // Reload data from local DB after sync
+      const [users, groups, transactions, transactionSplits, settlements] = await Promise.all([
+        db.dbGetAllUsers(),
+        db.dbGetAllGroups(),
+        db.dbGetAllTransactions(),
+        db.dbGetAllTransactionSplits(),
+        db.dbGetAllSettlements(),
+      ]);
+
+      const allGroupMembers: GroupMember[] = [];
+      for (const group of groups) {
+        const members = await db.dbGetGroupMembers(group.id);
+        allGroupMembers.push(...members);
+      }
+
+      set({
+        users,
+        groups,
+        groupMembers: allGroupMembers,
+        transactions,
+        transactionSplits,
+        settlements,
+        lastSyncTime: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Sync failed:', error);
+    } finally {
+      set({ isSyncing: false });
+    }
+  },
+
+  setOnlineStatus: (online: boolean) => {
+    set({ isOnline: online });
+    if (online) {
+      // Auto-sync when coming back online
+      get().syncNow();
     }
   },
 
@@ -126,8 +189,14 @@ export const useStore = create<AppState>((set, get) => ({
       created_at: now,
       updated_at: now,
     };
+
+    // Save locally first
     await db.dbAddUser(user);
     set((state) => ({ users: [...state.users, user] }));
+
+    // Sync to cloud
+    await sync.syncUserImmediate('INSERT', user);
+
     return user;
   },
 
@@ -136,15 +205,23 @@ export const useStore = create<AppState>((set, get) => ({
     if (!user) return;
 
     const updatedUser = { ...user, ...data, updated_at: new Date().toISOString() };
+
     await db.dbAddUser(updatedUser);
     set((state) => ({
       users: state.users.map((u) => (u.id === id ? updatedUser : u)),
     }));
+
+    await sync.syncUserImmediate('UPDATE', updatedUser);
   },
 
   deleteUser: async (id: string) => {
+    const user = get().users.find((u) => u.id === id);
+    if (!user) return;
+
     await db.dbDeleteUser(id);
     set((state) => ({ users: state.users.filter((u) => u.id !== id) }));
+
+    await sync.syncUserImmediate('DELETE', user);
   },
 
   getUser: (id: string) => {
@@ -161,8 +238,12 @@ export const useStore = create<AppState>((set, get) => ({
       created_at: now,
       updated_at: now,
     };
+
     await db.dbAddGroup(group);
     set((state) => ({ groups: [...state.groups, group] }));
+
+    await sync.syncGroupImmediate('INSERT', group);
+
     return group;
   },
 
@@ -171,15 +252,23 @@ export const useStore = create<AppState>((set, get) => ({
     if (!group) return;
 
     const updatedGroup = { ...group, ...data, updated_at: new Date().toISOString() };
+
     await db.dbAddGroup(updatedGroup);
     set((state) => ({
       groups: state.groups.map((g) => (g.id === id ? updatedGroup : g)),
     }));
+
+    await sync.syncGroupImmediate('UPDATE', updatedGroup);
   },
 
   deleteGroup: async (id: string) => {
+    const group = get().groups.find((g) => g.id === id);
+    if (!group) return;
+
     await db.dbDeleteGroup(id);
     set((state) => ({ groups: state.groups.filter((g) => g.id !== id) }));
+
+    await sync.syncGroupImmediate('DELETE', group);
   },
 
   getGroup: (id: string) => {
@@ -198,8 +287,11 @@ export const useStore = create<AppState>((set, get) => ({
       user_id: userId,
       created_at: new Date().toISOString(),
     };
+
     await db.dbAddGroupMember(member);
     set((state) => ({ groupMembers: [...state.groupMembers, member] }));
+
+    await sync.syncGroupMemberImmediate('INSERT', member);
   },
 
   removeMemberFromGroup: async (groupId: string, userId: string) => {
@@ -212,6 +304,8 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       groupMembers: state.groupMembers.filter((m) => m.id !== member.id),
     }));
+
+    await sync.syncGroupMemberImmediate('DELETE', member);
   },
 
   getGroupMembers: (groupId: string) => {
@@ -286,15 +380,28 @@ export const useStore = create<AppState>((set, get) => ({
       transactionSplits: [...state.transactionSplits, ...splits],
     }));
 
+    // Sync to cloud
+    await sync.syncTransactionImmediate('INSERT', transaction);
+    for (const split of splits) {
+      await sync.syncTransactionSplitImmediate('INSERT', split);
+    }
+
     return transaction;
   },
 
   deleteTransaction: async (id: string) => {
+    const transaction = get().transactions.find((t) => t.id === id);
+    if (!transaction) return;
+
     const splits = get().transactionSplits.filter((s) => s.transaction_id === id);
+
     for (const split of splits) {
       await db.dbDeleteTransactionSplit(split.id);
+      await sync.syncTransactionSplitImmediate('DELETE', split);
     }
+
     await db.dbDeleteTransaction(id);
+    await sync.syncTransactionImmediate('DELETE', transaction);
 
     set((state) => ({
       transactions: state.transactions.filter((t) => t.id !== id),
@@ -348,6 +455,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (split.amount <= remainingAmount) {
         const updatedSplit = { ...split, is_settled: true, settled_at: now };
         await db.dbUpdateTransactionSplit(updatedSplit);
+        await sync.syncTransactionSplitImmediate('UPDATE', updatedSplit);
         updatedSplits.push(updatedSplit);
         remainingAmount -= split.amount;
       }
@@ -360,6 +468,9 @@ export const useStore = create<AppState>((set, get) => ({
         return updated || s;
       }),
     }));
+
+    // Sync settlement to cloud
+    await sync.syncSettlementImmediate(settlement);
   },
 
   // Balance calculations

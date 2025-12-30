@@ -6,3 +6,8 @@ export { default as Input } from './Input';
 export { default as Card, CardHeader, CardTitle, CardDescription } from './Card';
 export { default as EmptyState } from './EmptyState';
 export { default as Avatar } from './Avatar';
+export { AuthProvider, useAuth } from './AuthProvider';
+export { default as AuthGuard } from './AuthGuard';
+export { default as LoginPage } from './LoginPage';
+export { default as AppShell } from './AppShell';
+export { default as SyncStatus } from './SyncStatus';
